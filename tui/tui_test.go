@@ -1,6 +1,7 @@
 package tui_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -113,10 +114,10 @@ func TestMapModel_CloseDropdownWithEsc(t *testing.T) {
 
 func TestValidateModel_PassView(t *testing.T) {
 	result := tenant.ValidationResult{}
-	m := tui.NewValidateModel(result, 5, "payroll.csv")
+	m := tui.NewValidateModel(result, testValidateSub(5), "payroll.csv")
 
 	view := m.View()
-	if !strings.Contains(view, "EHECS Validation Report") {
+	if !strings.Contains(view, "Validation Report") {
 		t.Error("expected report title")
 	}
 	if !strings.Contains(view, "PASSED") {
@@ -132,7 +133,7 @@ func TestValidateModel_ErrorView(t *testing.T) {
 			Message: "OvertimePay > 0 but OvertimeHours = 0",
 		}},
 	}
-	m := tui.NewValidateModel(result, 3, "payroll.csv")
+	m := tui.NewValidateModel(result, testValidateSub(3), "payroll.csv")
 	view := m.View()
 
 	if !strings.Contains(view, "FAILED") {
@@ -151,7 +152,7 @@ func TestValidateModel_DetailPanel(t *testing.T) {
 			Message: "test error",
 		}},
 	}
-	m := tui.NewValidateModel(result, 1, "payroll.csv")
+	m := tui.NewValidateModel(result, testValidateSub(1), "payroll.csv")
 
 	// Press enter to open detail panel
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -173,7 +174,7 @@ func TestValidateModel_ToggleErrors(t *testing.T) {
 			Code: "ZERO_EARNINGS", Message: "zero earnings",
 		}},
 	}
-	m := tui.NewValidateModel(result, 1, "payroll.csv")
+	m := tui.NewValidateModel(result, testValidateSub(1), "payroll.csv")
 
 	// Toggle errors off with 'e'
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
@@ -187,7 +188,7 @@ func TestValidateModel_ToggleErrors(t *testing.T) {
 
 func TestValidateModel_Quit(t *testing.T) {
 	result := tenant.ValidationResult{}
-	m := tui.NewValidateModel(result, 1, "payroll.csv")
+	m := tui.NewValidateModel(result, testValidateSub(1), "payroll.csv")
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
 	if cmd == nil {
 		t.Error("expected quit command after 'q'")
@@ -384,4 +385,24 @@ func testGetResult() *tenant.GetResult {
 		EmployeeCount: 1,
 		Submission:    sub,
 	}
+}
+
+// testValidateSub creates a minimal Submission with n employees for validator TUI tests.
+func testValidateSub(n int) *tenant.Submission {
+	sub := &tenant.Submission{
+		TenantID:      tenantID,
+		HoldingNumber: "CSO123456",
+		TaxYear:       2026,
+		Quarter:       1,
+		ReturnType:    "ORIGINAL",
+	}
+	for i := 0; i < n; i++ {
+		sub.Employees = append(sub.Employees, tenant.EmployeeRecord{
+			PPSN:           fmt.Sprintf("%07dA", i+1234567),
+			EmploymentID:   fmt.Sprintf("EMP%03d", i+1),
+			OccupationCode: 4, EmploymentType: "FULL_TIME",
+			GrossEarnings: 15000, BasicPay: 15000, BasicHours: 520, EmployerPRSI: 1935,
+		})
+	}
+	return sub
 }

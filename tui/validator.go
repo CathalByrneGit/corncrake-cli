@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -11,22 +12,27 @@ import (
 )
 
 // ValidateModel is the bubbletea model for the interactive validation report.
+// Tab 1: validation results. Tab 2: data table preview.
 type ValidateModel struct {
 	result        tenant.ValidationResult
+	submission    *tenant.Submission
 	employeeCount int
 	filename      string
 
-	// All items flattened into one list for navigation
-	items  []valItem
-	cursor int
+	// Tab navigation: 0 = validation, 1 = data table
+	activeTab int
 
-	// Filter state
+	// Validation tab state
+	items        []valItem
+	cursor       int
 	showErrors   bool
 	showWarnings bool
 	showPassing  bool
+	detailOpen   bool
 
-	// Detail panel
-	detailOpen bool
+	// Data table tab state
+	dataTable  table.Model
+	tableReady bool
 
 	width  int
 	height int
@@ -38,7 +44,7 @@ type valItemKind int
 const (
 	kindError valItemKind = iota
 	kindWarn
-	kindPass // synthetic pass items summarising passing checks
+	kindPass
 )
 
 type valItem struct {
@@ -46,10 +52,9 @@ type valItem struct {
 	code    string
 	field   string
 	message string
-	detail  string // expanded statutory explanation
+	detail  string
 }
 
-// explanations maps error/warning codes to human-readable statutory context.
 var explanations = map[string]string{
 	"OVERTIME_INCONSISTENCY": `Statutory rule (CSO Notes for Payroll Software Providers v4.0):
 
@@ -131,11 +136,13 @@ func explanationFor(code string) string {
 	return "No additional detail available for this check."
 }
 
-// NewValidateModel creates the validator TUI model from a validation result.
-func NewValidateModel(result tenant.ValidationResult, employeeCount int, filename string) ValidateModel {
+// NewValidateModel creates the validator TUI model.
+// Pass the full Submission so the data table tab can render employee rows.
+func NewValidateModel(result tenant.ValidationResult, sub *tenant.Submission, filename string) ValidateModel {
 	m := ValidateModel{
 		result:        result,
-		employeeCount: employeeCount,
+		submission:    sub,
+		employeeCount: len(sub.Employees),
 		filename:      filename,
 		showErrors:    true,
 		showWarnings:  true,
@@ -147,31 +154,19 @@ func NewValidateModel(result tenant.ValidationResult, employeeCount int, filenam
 
 func (m *ValidateModel) rebuildItems() {
 	m.items = nil
-
 	if m.showErrors {
 		for _, e := range m.result.SchemaErrors {
-			m.items = append(m.items, valItem{
-				kind: kindError, code: e.Code, field: e.Field,
-				message: e.Message, detail: explanationFor(e.Code),
-			})
+			m.items = append(m.items, valItem{kind: kindError, code: e.Code, field: e.Field, message: e.Message, detail: explanationFor(e.Code)})
 		}
 		for _, e := range m.result.LogicErrors {
-			m.items = append(m.items, valItem{
-				kind: kindError, code: e.Code, field: e.Field,
-				message: e.Message, detail: explanationFor(e.Code),
-			})
+			m.items = append(m.items, valItem{kind: kindError, code: e.Code, field: e.Field, message: e.Message, detail: explanationFor(e.Code)})
 		}
 	}
-
 	if m.showWarnings {
 		for _, w := range m.result.Warnings {
-			m.items = append(m.items, valItem{
-				kind: kindWarn, code: w.Code, field: w.Field,
-				message: w.Message, detail: explanationFor(w.Code),
-			})
+			m.items = append(m.items, valItem{kind: kindWarn, code: w.Code, field: w.Field, message: w.Message, detail: explanationFor(w.Code)})
 		}
 	}
-
 	if m.showPassing && m.result.OK() {
 		m.items = append(m.items, valItem{
 			kind:    kindPass,
@@ -181,6 +176,68 @@ func (m *ValidateModel) rebuildItems() {
 	}
 }
 
+// buildDataTable constructs the bubbles table from the submission employees.
+func (m *ValidateModel) buildDataTable() {
+	if m.submission == nil || len(m.submission.Employees) == 0 {
+		return
+	}
+
+	w := m.width
+	if w < 60 {
+		w = 120
+	}
+
+	cols := []table.Column{
+		{Title: "PPSN", Width: 12},
+		{Title: "Emp ID", Width: 8},
+		{Title: "Type", Width: 11},
+		{Title: "Gross (€)", Width: 10},
+		{Title: "Basic (€)", Width: 10},
+		{Title: "OT Pay (€)", Width: 10},
+		{Title: "Hrs", Width: 7},
+		{Title: "OT Hrs", Width: 7},
+		{Title: "PRSI (€)", Width: 10},
+	}
+
+	rows := make([]table.Row, len(m.submission.Employees))
+	for i, emp := range m.submission.Employees {
+		rows[i] = table.Row{
+			emp.PPSN,
+			truncate(emp.EmploymentID, 6),
+			emp.EmploymentType,
+			fmt.Sprintf("%.2f", emp.GrossEarnings),
+			fmt.Sprintf("%.2f", emp.BasicPay),
+			fmt.Sprintf("%.2f", emp.OvertimePay),
+			fmt.Sprintf("%.1f", emp.BasicHours),
+			fmt.Sprintf("%.1f", emp.OvertimeHours),
+			fmt.Sprintf("%.2f", emp.EmployerPRSI),
+		}
+	}
+
+	t := table.New(
+		table.WithColumns(cols),
+		table.WithRows(rows),
+		table.WithFocused(true),
+		table.WithHeight(max(5, m.height-8)),
+	)
+
+	s := table.DefaultStyles()
+	s.Header = s.Header.
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(colNavy).
+		BorderBottom(true).
+		Bold(true).
+		Foreground(colTeal)
+	s.Selected = s.Selected.
+		Foreground(colWhite).
+		Background(lipgloss.Color("#1e3a5f")).
+		Bold(false)
+	t.SetStyles(s)
+
+	m.dataTable = t
+	m.tableReady = true
+}
+
 func (m ValidateModel) Init() tea.Cmd { return nil }
 
 func (m ValidateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -188,44 +245,79 @@ func (m ValidateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		// Always invalidate so the table rebuilds at the new size
+		m.tableReady = false
+		if m.activeTab == 1 {
+			m.buildDataTable()
+		}
 
 	case tea.KeyMsg:
+		// Global keys
 		switch msg.String() {
 		case "q", "ctrl+c":
 			m.done = true
 			return m, tea.Quit
+		case "tab":
+			m.activeTab = (m.activeTab + 1) % 2
+			if m.activeTab == 1 {
+				if !m.tableReady {
+					m.buildDataTable()
+				}
+				m.dataTable.Focus()
+			} else {
+				m.dataTable.Blur()
+			}
+			return m, nil
+		case "1":
+			m.activeTab = 0
+			if m.tableReady {
+				m.dataTable.Blur()
+			}
+			return m, nil
+		case "2":
+			m.activeTab = 1
+			if !m.tableReady {
+				m.buildDataTable()
+			}
+			m.dataTable.Focus()
+			return m, nil
+		}
 
+		// Tab-specific keys
+		if m.activeTab == 1 {
+			var cmd tea.Cmd
+			m.dataTable, cmd = m.dataTable.Update(msg)
+			return m, cmd
+		}
+
+		// Validation tab keys
+		switch msg.String() {
 		case "up", "k":
 			if m.cursor > 0 {
 				m.cursor--
 				m.detailOpen = false
 			}
-
 		case "down", "j":
 			if m.cursor < len(m.items)-1 {
 				m.cursor++
 				m.detailOpen = false
 			}
-
 		case "enter", " ":
 			if len(m.items) > 0 {
 				m.detailOpen = !m.detailOpen
 			}
-
 		case "e":
 			m.showErrors = !m.showErrors
 			m.rebuildItems()
 			if m.cursor >= len(m.items) {
 				m.cursor = max(0, len(m.items)-1)
 			}
-
 		case "w":
 			m.showWarnings = !m.showWarnings
 			m.rebuildItems()
 			if m.cursor >= len(m.items) {
 				m.cursor = max(0, len(m.items)-1)
 			}
-
 		case "esc":
 			m.detailOpen = false
 		}
@@ -236,6 +328,9 @@ func (m ValidateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m ValidateModel) View() string {
 	if m.done {
 		return ""
+	}
+	if m.width > 0 && m.width < 60 {
+		return "\n  Terminal too narrow — widen the window.\n"
 	}
 	var b strings.Builder
 
@@ -250,12 +345,42 @@ func (m ValidateModel) View() string {
 		statusStyle = StyleBadgeWarn
 	}
 
-	b.WriteString(StyleTitle.Render("  EHECS Validation Report  "))
+	b.WriteString(StyleTitle.Render("  Validation Report  "))
 	b.WriteString(statusStyle.Render(" " + status + " "))
 	b.WriteString(StyleSubtitle.Render(fmt.Sprintf("  %s  ·  %d employees", m.filename, m.employeeCount)))
-	b.WriteString("\n\n")
+	b.WriteString("\n")
 
-	// Summary counts
+	// Tab bar
+	tabs := []string{"1 Validation", "2 Data preview"}
+	for i, tab := range tabs {
+		if i == m.activeTab {
+			b.WriteString(lipgloss.NewStyle().
+				Background(colTeal).Foreground(colWhite).
+				Bold(true).Padding(0, 2).Render(tab))
+		} else {
+			b.WriteString(lipgloss.NewStyle().
+				Foreground(colDim).Padding(0, 2).Render(tab))
+		}
+		b.WriteString(" ")
+	}
+	b.WriteString("\n")
+	b.WriteString(StyleRowDim.Render(strings.Repeat("─", m.width)))
+	b.WriteString("\n")
+
+	if m.activeTab == 1 {
+		b.WriteString(m.renderDataTable())
+	} else {
+		b.WriteString(m.renderValidation())
+	}
+
+	b.WriteString("\n")
+	b.WriteString(m.renderStatusBar())
+	return b.String()
+}
+
+func (m ValidateModel) renderValidation() string {
+	var b strings.Builder
+
 	errs := len(m.result.SchemaErrors) + len(m.result.LogicErrors)
 	warns := len(m.result.Warnings)
 	summary := fmt.Sprintf("  %s  %s  %s",
@@ -271,23 +396,31 @@ func (m ValidateModel) View() string {
 	} else {
 		b.WriteString(m.renderList())
 	}
+	return b.String()
+}
 
+func (m ValidateModel) renderDataTable() string {
+	if m.submission == nil || len(m.submission.Employees) == 0 {
+		return StyleRowDim.Render("\n  No employee data available.\n")
+	}
+	if !m.tableReady || m.activeTab != 1 {
+		return ""
+	}
+
+	var b strings.Builder
 	b.WriteString("\n")
-	b.WriteString(m.renderStatusBar())
+	b.WriteString(m.dataTable.View())
 	return b.String()
 }
 
 func (m ValidateModel) renderList() string {
 	var b strings.Builder
-
 	if len(m.items) == 0 {
 		b.WriteString(StyleRowDim.Render("  No items match current filter."))
 		return b.String()
 	}
-
 	for i, item := range m.items {
-		badge := ""
-		msg := ""
+		badge, msg := "", ""
 		switch item.kind {
 		case kindError:
 			badge = StyleBadgeError.Render(" FAIL ")
@@ -299,7 +432,6 @@ func (m ValidateModel) renderList() string {
 			badge = StyleBadgeOK.Render(" PASS ")
 			msg = StyleScoreHigh.Render(item.message)
 		}
-
 		row := fmt.Sprintf("  %s  %s", badge, msg)
 		if i == m.cursor {
 			b.WriteString(StyleRowSelected.Render(row))
@@ -308,7 +440,6 @@ func (m ValidateModel) renderList() string {
 		}
 		b.WriteString("\n")
 	}
-
 	return b.String()
 }
 
@@ -317,36 +448,39 @@ func (m ValidateModel) renderDetail() string {
 		return ""
 	}
 	item := m.items[m.cursor]
-
 	var b strings.Builder
 	w := m.width - 6
 	if w < 40 {
 		w = 40
 	}
-
 	badge := StyleBadgeError.Render(" FAIL ")
 	if item.kind == kindWarn {
 		badge = StyleBadgeWarn.Render(" WARN ")
 	} else if item.kind == kindPass {
 		badge = StyleBadgeOK.Render(" PASS ")
 	}
-
 	title := fmt.Sprintf("%s  %s", badge,
 		lipgloss.NewStyle().Bold(true).Foreground(colLight).Render(item.code))
-
 	content := strings.Builder{}
 	content.WriteString(lipgloss.NewStyle().Foreground(colDim).Render("Field: "+item.field) + "\n\n")
 	content.WriteString(lipgloss.NewStyle().Foreground(colLight).Render(item.message) + "\n\n")
 	if item.detail != "" {
 		content.WriteString(lipgloss.NewStyle().Foreground(colDim).Render(item.detail))
 	}
-
 	panel := StyleDetail.Width(w).Render(title + "\n\n" + content.String())
 	b.WriteString(panel)
 	return b.String()
 }
 
 func (m ValidateModel) renderStatusBar() string {
+	if m.activeTab == 1 {
+		return StyleStatusBar.Width(m.width).Render(
+			KeyHint("↑↓", "navigate") +
+				KeyHint("tab/1/2", "switch tabs") +
+				KeyHint("q", "quit"),
+		)
+	}
+
 	errToggle := "e:errors"
 	if !m.showErrors {
 		errToggle = "e:errors(off)"
@@ -355,11 +489,11 @@ func (m ValidateModel) renderStatusBar() string {
 	if !m.showWarnings {
 		warnToggle = "w:warnings(off)"
 	}
-
 	if m.detailOpen {
 		return StyleStatusBar.Width(m.width).Render(
 			KeyHint("↑↓", "navigate") +
 				KeyHint("enter/esc", "close detail") +
+				KeyHint("tab/2", "data preview") +
 				KeyHint("q", "quit"),
 		)
 	}
@@ -368,6 +502,7 @@ func (m ValidateModel) renderStatusBar() string {
 			KeyHint("enter", "expand detail") +
 			KeyHint(errToggle, "toggle") +
 			KeyHint(warnToggle, "toggle") +
+			KeyHint("tab/2", "data preview") +
 			KeyHint("q", "quit"),
 	)
 }

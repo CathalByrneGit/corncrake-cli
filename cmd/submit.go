@@ -8,35 +8,37 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/pflag"
 
+	"github.com/CathalByrneGit/corncrake-cli/tui"
 	ehecs "github.com/CathalByrneGit/corncrake-sdk"
 	"github.com/CathalByrneGit/corncrake-sdk/client"
 	"github.com/CathalByrneGit/corncrake-sdk/formatter"
 	"github.com/CathalByrneGit/corncrake-sdk/tenant"
-	"github.com/CathalByrneGit/corncrake-cli/tui"
 )
 
 // RunSubmit implements: corncrake-cli submit <file> --mapping <file> [flags]
 //
 // Default:  validates and POSTs to the EHECS REST API.
 // --xml:    validate and produce a schema-compliant XML file instead —
-//           no token required, compatible with https://lodgedata.cso.ie
-//           manual upload and local archiving.
+//
+//	no token required, compatible with https://lodgedata.cso.ie
+//	manual upload and local archiving.
+//
 // --dry-run: validate only, no submission and no XML written.
 func RunSubmit(args []string) error {
 	fs := pflag.NewFlagSet("submit", pflag.ContinueOnError)
-	mappingFile  := fs.String("mapping", "mapping.json", "Mapping file from 'corncrake-cli map'")
-	holding      := fs.String("holding", "", "CSO holding number (required)")
-	quarter      := fs.Int("quarter", 0, "Reporting quarter 1–4 (required)")
-	year         := fs.Int("year", 0, "Reporting year e.g. 2026 (required)")
-	returnType   := fs.String("return-type", "ORIGINAL", "ORIGINAL or AMENDED")
-	token        := fs.String("token", "", "Bearer JWT (or EHECS_TOKEN env var) — not required with --xml")
-	apiURL       := fs.String("api-url", "", "Override API base URL (e.g. for PIT environment)")
+	mappingFile := fs.String("mapping", "mapping.json", "Mapping file from 'corncrake-cli map'")
+	holding := fs.String("holding", "", "CSO holding number (required)")
+	quarter := fs.Int("quarter", 0, "Reporting quarter 1–4 (required)")
+	year := fs.Int("year", 0, "Reporting year e.g. 2026 (required)")
+	returnType := fs.String("return-type", "ORIGINAL", "ORIGINAL or AMENDED")
+	token := fs.String("token", "", "Bearer JWT (or EHECS_TOKEN env var) — not required with --xml")
+	apiURL := fs.String("api-url", "", "Override API base URL (e.g. for PIT environment)")
 	softwareUsed := fs.String("software", "corncrake-cli", "Software identifier")
-	softwareVer  := fs.String("software-version", "1.0.0", "Software version")
-	dryRun       := fs.Bool("dry-run", false, "Validate only — no API call, no XML written")
-	interactive  := fs.Bool("interactive", false, "Launch interactive TUI submit screen")
-	asXML        := fs.Bool("xml", false, "Produce XML file instead of submitting to the API")
-	xmlOut       := fs.String("xml-out", "", "XML output path (default: EHECS_Q<q>_<year>.xml, - for stdout)")
+	softwareVer := fs.String("software-version", "1.0.0", "Software version")
+	dryRun := fs.Bool("dry-run", false, "Validate only — no API call, no XML written")
+	interactive := fs.Bool("interactive", false, "Launch interactive TUI submit screen")
+	asXML := fs.Bool("xml", false, "Produce XML file instead of submitting to the API")
+	xmlOut := fs.String("xml-out", "", "XML output path (default: EHECS_Q<q>_<year>.xml, - for stdout)")
 
 	fs.Usage = func() {
 		fmt.Print(`Usage: corncrake-cli submit <file.csv> [flags]
@@ -162,7 +164,7 @@ EXAMPLES
 			*holding, *quarter, *year, *returnType,
 			len(sub.Employees), file, resolvedURL, submitFn,
 		)
-		p := tea.NewProgram(model, tea.WithAltScreen())
+		p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 		if _, err := p.Run(); err != nil {
 			return fmt.Errorf("TUI error: %w", err)
 		}

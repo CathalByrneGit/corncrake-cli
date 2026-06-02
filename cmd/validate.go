@@ -7,19 +7,19 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/pflag"
 
+	"github.com/CathalByrneGit/corncrake-cli/tui"
 	ehecs "github.com/CathalByrneGit/corncrake-sdk"
 	"github.com/CathalByrneGit/corncrake-sdk/tenant"
-	"github.com/CathalByrneGit/corncrake-cli/tui"
 )
 
 // RunValidate implements: corncrake-cli validate <file> --mapping <file> [flags]
 func RunValidate(args []string) error {
 	fs := pflag.NewFlagSet("validate", pflag.ContinueOnError)
 	mappingFile := fs.String("mapping", "mapping.json", "Mapping file from 'corncrake-cli map'")
-	holding     := fs.String("holding", "", "CSO holding number (required)")
-	quarter     := fs.Int("quarter", 0, "Reporting quarter 1–4 (required)")
-	year        := fs.Int("year", 0, "Reporting year e.g. 2026 (required)")
-	returnType  := fs.String("return-type", "ORIGINAL", "ORIGINAL or AMENDED")
+	holding := fs.String("holding", "", "CSO holding number (required)")
+	quarter := fs.Int("quarter", 0, "Reporting quarter 1–4 (required)")
+	year := fs.Int("year", 0, "Reporting year e.g. 2026 (required)")
+	returnType := fs.String("return-type", "ORIGINAL", "ORIGINAL or AMENDED")
 	interactive := fs.Bool("interactive", false, "Launch interactive TUI validation report")
 	fs.Usage = func() {
 		fmt.Print(`Usage: corncrake-cli validate <file.csv> [flags]
@@ -71,8 +71,8 @@ FLAGS
 
 	// ── Interactive TUI path ──────────────────────────────────────────────────
 	if *interactive {
-		model := tui.NewValidateModel(result, len(sub.Employees), file)
-		p := tea.NewProgram(model, tea.WithAltScreen())
+		model := tui.NewValidateModel(result, sub, file)
+		p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 		if _, err := p.Run(); err != nil {
 			return fmt.Errorf("TUI error: %w", err)
 		}
