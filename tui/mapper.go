@@ -121,14 +121,18 @@ func (m MapModel) updateDropdown(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "down", "j":
-		if m.dropIdx < len(m.dropItems)-1 {
+		if m.dropIdx < len(m.dropItems) {
 			m.dropIdx++
 		}
 
 	case "enter", " ":
-		if len(m.dropItems) > 0 {
-			chosen := m.dropItems[m.dropIdx]
-			field := m.cfg.FieldSchema[m.cursor].ID
+		field := m.cfg.FieldSchema[m.cursor].ID
+		if m.dropIdx == 0 {
+			// Index 0 = unmapped — clear the assignment
+			m.removeAssignment(field)
+		} else if m.dropIdx <= len(m.dropItems) {
+			// Index 1..N maps to dropItems[0..N-1]
+			chosen := m.dropItems[m.dropIdx-1]
 			m.setAssignment(field, chosen.col, chosen.score)
 		}
 		m.inDrop = false
