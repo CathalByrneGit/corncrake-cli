@@ -139,6 +139,17 @@ corncrake-cli get \
   --token $CORNCRAKE_TOKEN
 ```
 
+**Target a specific environment:**
+```bash
+# Local
+corncrake-cli get --submission <id> ... --token $CORNCRAKE_TOKEN \
+  --api-url http://localhost:3000
+
+# PIT
+corncrake-cli get --submission <id> ... --token $CORNCRAKE_TOKEN \
+  --api-url https://api-pit.cso.ie/corncrake/v1
+```
+
 **Also export as XML:**
 ```bash
 corncrake-cli get --submission <id> ... --token $CORNCRAKE_TOKEN --xml
@@ -182,7 +193,7 @@ corncrake-cli get --submission <id> ... --token $CORNCRAKE_TOKEN --interactive
 | `--xml` | | Also export as XML |
 | `--xml-out` | `<id>.xml` | XML path (`-` for stdout) |
 | `--interactive` | | TUI three-tab viewer |
-
+| `--api-url` | production | Override API base URL (local or PIT) |
 ---
 
 ## Interactive TUI screens
