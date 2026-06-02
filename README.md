@@ -18,6 +18,10 @@ Part of the [Corncrake toolchain](#ecosystem).
 ```bash
 git clone https://github.com/CathalByrneGit/corncrake-cli.git
 cd corncrake-cli
+# Development — keep debug info, easier to diagnose crashes
+go build -o corncrake-cli .
+
+# Production / CI release artifact — strip it
 go build -ldflags="-s -w" -o corncrake-cli .
 ```
 
